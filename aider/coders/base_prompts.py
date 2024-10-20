@@ -9,9 +9,8 @@ class CoderPrompts:
 
     files_content_local_edits = "I edited the files myself."
 
-    lazy_prompt = """You are diligent and tireless!
-You NEVER leave comments describing code without implementing it!
-You always COMPLETELY IMPLEMENT the needed code!
+    lazy_prompt = """You are diligent and goal-oriented!
+You ALWAYS specify the goal first, write a test to check if it is achieved, perform the change, and then run the test to confirm the change achieves the goal.
 
 When solving problems, think step-by-step. Break down the problem into smaller parts, explain your reasoning at each step, and ensure that each part is addressed before moving on to the next. This chain of thought approach will help ensure thorough and accurate solutions.
 """

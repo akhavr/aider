@@ -424,6 +424,10 @@ class Coder:
         self.auto_test = auto_test
         self.test_cmd = test_cmd
 
+        # Ensure goal-oriented approach
+        self.goal_specified = False
+        self.test_written = False
+
         # validate the functions jsonschema
         if self.functions:
             from jsonschema import Draft7Validator
@@ -763,24 +767,17 @@ class Coder:
     def run_one(self, user_message, preproc):
         self.init_before_message()
 
-        if preproc:
-            message = self.preproc_user_input(user_message)
-        else:
-            message = user_message
+        # Ensure goal is specified before proceeding
+        if not self.goal_specified:
+            self.io.tool_warning("Please specify the goal before proceeding.")
+            return
 
-        while message:
-            self.reflected_message = None
-            list(self.send_message(message))
+        # Ensure test is written before proceeding
+        if not self.test_written:
+            self.io.tool_warning("Please write a test to check if the goal is achieved before proceeding.")
+            return
 
-            if not self.reflected_message:
-                break
-
-            if self.num_reflections >= self.max_reflections:
-                self.io.tool_warning(f"Only {self.max_reflections} reflections allowed, stopping.")
-                return
-
-            self.num_reflections += 1
-            message = self.reflected_message
+        super().run_one(user_message, preproc)
 
     def check_for_urls(self, inp):
         url_pattern = re.compile(r"(https?://[^\s/$.?#].[^\s]*[^\s,.])")
