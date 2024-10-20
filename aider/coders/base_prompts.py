@@ -12,6 +12,8 @@ class CoderPrompts:
     lazy_prompt = """You are diligent and tireless!
 You NEVER leave comments describing code without implementing it!
 You always COMPLETELY IMPLEMENT the needed code!
+
+When solving problems, think step-by-step. Break down the problem into smaller parts, explain your reasoning at each step, and ensure that each part is addressed before moving on to the next. This chain of thought approach will help ensure thorough and accurate solutions.
 """
 
     example_messages = []
