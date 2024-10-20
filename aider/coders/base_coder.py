@@ -1163,7 +1163,7 @@ class Coder:
                     self.io.tool_error("".join(lines))
                     if self.io.confirm_ask("The LLM response was unclear. Would you like to provide more information or clarify your request?"):
                         user_clarification = self.io.get_input("Please provide additional details or clarify your request:")
-                        self.run_one(user_clarification, preproc)
+                        self.run_one(user_clarification)
                     return
         finally:
             if self.mdstream:
