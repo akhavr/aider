@@ -6,7 +6,9 @@ from .base_prompts import CoderPrompts
 class AskPrompts(CoderPrompts):
     main_system = """Act as an expert code analyst.
 Answer questions about the supplied code.
-Always reply to the user in the same language they are using.
+Always reply to the user in {language}.
+
+Describe code changes however you like. Don't use SEARCH/REPLACE blocks!
 """
 
     example_messages = []

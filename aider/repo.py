@@ -2,7 +2,18 @@ import os
 import time
 from pathlib import Path, PurePosixPath
 
-import git
+try:
+    import git
+
+    ANY_GIT_ERROR = [
+        git.exc.ODBError,
+        git.exc.GitError,
+        git.exc.InvalidGitRepositoryError,
+    ]
+except ImportError:
+    git = None
+    ANY_GIT_ERROR = []
+
 import pathspec
 
 from aider import prompts, utils
@@ -10,15 +21,16 @@ from aider.sendchat import simple_send_with_retries
 
 from .dump import dump  # noqa: F401
 
-ANY_GIT_ERROR = (
-    git.exc.ODBError,
-    git.exc.GitError,
+ANY_GIT_ERROR += [
     OSError,
     IndexError,
     BufferError,
     TypeError,
     ValueError,
-)
+    AttributeError,
+    AssertionError,
+]
+ANY_GIT_ERROR = tuple(ANY_GIT_ERROR)
 
 
 class GitRepo:
@@ -169,7 +181,7 @@ class GitRepo:
     def get_rel_repo_dir(self):
         try:
             return os.path.relpath(self.repo.git_dir, os.getcwd())
-        except ValueError:
+        except (ValueError, OSError):
             return self.repo.git_dir
 
     def get_commit_message(self, diffs, context):
@@ -192,9 +204,7 @@ class GitRepo:
             max_tokens = model.info.get("max_input_tokens") or 0
             if max_tokens and num_tokens > max_tokens:
                 continue
-            commit_message = simple_send_with_retries(
-                model.name, messages, extra_params=model.extra_params
-            )
+            commit_message = simple_send_with_retries(model, messages)
             if commit_message:
                 break
 
@@ -278,9 +288,17 @@ class GitRepo:
                 files = self.tree_files[commit]
             else:
                 try:
-                    for blob in commit.tree.traverse():
-                        if blob.type == "blob":  # blob is a file
-                            files.add(blob.path)
+                    iterator = commit.tree.traverse()
+                    while True:
+                        try:
+                            blob = next(iterator)
+                            if blob.type == "blob":  # blob is a file
+                                files.add(blob.path)
+                        except IndexError:
+                            self.io.tool_warning(f"GitRepo: read error skipping {blob.path}")
+                            continue
+                        except StopIteration:
+                            break
                 except ANY_GIT_ERROR as err:
                     self.git_repo_error = err
                     self.io.tool_error(f"Unable to list files in git repo: {err}")
@@ -331,6 +349,15 @@ class GitRepo:
                 lines,
             )
 
+    def git_ignored_file(self, path):
+        if not self.repo:
+            return
+        try:
+            if self.repo.ignored(path):
+                return True
+        except ANY_GIT_ERROR:
+            return False
+
     def ignored_file(self, fname):
         self.refresh_aider_ignore()
 
@@ -343,8 +370,8 @@ class GitRepo:
 
     def ignored_file_raw(self, fname):
         if self.subtree_only:
-            fname_path = Path(self.normalize_path(fname))
             try:
+                fname_path = Path(self.normalize_path(fname))
                 cwd_path = Path.cwd().resolve().relative_to(Path(self.root).resolve())
             except ValueError:
                 # Issue #1524
