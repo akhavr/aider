@@ -675,6 +675,7 @@ def get_parser(default_config_files, git_root):
         metavar='RUNNER_CMD',
         default=None,
         help='Specify a wrapper command to execute shell commands through (eg. docker exec)'
+    )
     group.add_argument(
         "--file",
         action="append",
