@@ -1,6 +1,7 @@
 import glob
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -59,6 +60,7 @@ class Commands:
         parser=None,
         verbose=False,
         editor=None,
+        runner=None,
     ):
         self.io = io
         self.coder = coder
@@ -76,6 +78,7 @@ class Commands:
 
         self.help = None
         self.editor = editor
+        self.runner = runner
 
     def cmd_model(self, args):
         "Switch to a new LLM"
@@ -911,6 +914,9 @@ class Commands:
 
     def cmd_run(self, args, add_on_nonzero_exit=False):
         "Run a shell command and optionally add the output to the chat (alias: !)"
+        if self.runner:
+            args = f'{self.runner} {shlex.quote(command)}'
+
         exit_status, combined_output = run_cmd(
             args, verbose=self.verbose, error_print=self.io.tool_error, cwd=self.coder.root
         )
