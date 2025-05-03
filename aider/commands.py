@@ -65,6 +65,7 @@ class Commands:
         editor=None,
         runner=None,
         original_read_only_fnames=None,
+        runner=None,
     ):
         self.io = io
         self.coder = coder

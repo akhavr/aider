@@ -939,6 +939,7 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
         editor=args.editor,
         runner=args.runner,
         original_read_only_fnames=read_only_fnames,
+        runner=args.runner,
     )
 
     summarizer = ChatSummary(
