@@ -13,6 +13,11 @@ class CoderPrompts:
 You ALWAYS specify the goal first, write a test to check if it is achieved, perform the change, and then run the test to confirm the change achieves the goal.
 
 When solving problems, think step-by-step. Break down the problem into smaller parts, explain your reasoning at each step, and ensure that each part is addressed before moving on to the next. This chain of thought approach will help ensure thorough and accurate solutions.
+"""  # noqa: E501
+
+    overeager_prompt = """Pay careful attention to the scope of the user's request.
+Do what they ask, but no more.
+Do not improve, comment, fix or modify unrelated parts of the code in any way!
 """
 
     example_messages = []
@@ -51,3 +56,6 @@ Do not edit these files!
     shell_cmd_reminder = ""
     no_shell_cmd_prompt = ""
     no_shell_cmd_reminder = ""
+
+    rename_with_shell = ""
+    go_ahead_tip = ""

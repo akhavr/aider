@@ -3,8 +3,10 @@
 import argparse
 import os
 import sys
+from pathlib import Path
 
 import configargparse
+import shtab
 
 from aider import __version__
 from aider.args_formatter import (
@@ -12,8 +14,18 @@ from aider.args_formatter import (
     MarkdownHelpFormatter,
     YamlHelpFormatter,
 )
+from aider.deprecated import add_deprecated_model_args
 
 from .dump import dump  # noqa: F401
+
+
+def resolve_aiderignore_path(path_str, git_root=None):
+    path = Path(path_str)
+    if path.is_absolute():
+        return str(path)
+    elif git_root:
+        return str(Path(git_root) / path)
+    return str(path)
 
 
 def default_env_file(git_root):
@@ -28,107 +40,27 @@ def get_parser(default_config_files, git_root):
         config_file_parser_class=configargparse.YAMLConfigFileParser,
         auto_env_var_prefix="AIDER_",
     )
+    # List of valid edit formats for argparse validation & shtab completion.
+    # Dynamically gather them from the registered coder classes so the list
+    # stays in sync if new formats are added.
+    from aider import coders as _aider_coders
+
+    edit_format_choices = sorted(
+        {
+            c.edit_format
+            for c in _aider_coders.__all__
+            if hasattr(c, "edit_format") and c.edit_format is not None
+        }
+    )
     group = parser.add_argument_group("Main model")
     group.add_argument(
         "files", metavar="FILE", nargs="*", help="files to edit with an LLM (optional)"
-    )
+    ).complete = shtab.FILE
     group.add_argument(
         "--model",
         metavar="MODEL",
         default=None,
         help="Specify the model to use for the main chat",
-    )
-    opus_model = "claude-3-opus-20240229"
-    group.add_argument(
-        "--opus",
-        action="store_const",
-        dest="model",
-        const=opus_model,
-        help=f"Use {opus_model} model for the main chat",
-    )
-    sonnet_model = "claude-3-5-sonnet-20241022"
-    group.add_argument(
-        "--sonnet",
-        action="store_const",
-        dest="model",
-        const=sonnet_model,
-        help=f"Use {sonnet_model} model for the main chat",
-    )
-    haiku_model = "claude-3-5-haiku-20241022"
-    group.add_argument(
-        "--haiku",
-        action="store_const",
-        dest="model",
-        const=haiku_model,
-        help=f"Use {haiku_model} model for the main chat",
-    )
-    gpt_4_model = "gpt-4-0613"
-    group.add_argument(
-        "--4",
-        "-4",
-        action="store_const",
-        dest="model",
-        const=gpt_4_model,
-        help=f"Use {gpt_4_model} model for the main chat",
-    )
-    gpt_4o_model = "gpt-4o"
-    group.add_argument(
-        "--4o",
-        action="store_const",
-        dest="model",
-        const=gpt_4o_model,
-        help=f"Use {gpt_4o_model} model for the main chat",
-    )
-    gpt_4o_mini_model = "gpt-4o-mini"
-    group.add_argument(
-        "--mini",
-        action="store_const",
-        dest="model",
-        const=gpt_4o_mini_model,
-        help=f"Use {gpt_4o_mini_model} model for the main chat",
-    )
-    gpt_4_turbo_model = "gpt-4-1106-preview"
-    group.add_argument(
-        "--4-turbo",
-        action="store_const",
-        dest="model",
-        const=gpt_4_turbo_model,
-        help=f"Use {gpt_4_turbo_model} model for the main chat",
-    )
-    gpt_3_model_name = "gpt-3.5-turbo"
-    group.add_argument(
-        "--35turbo",
-        "--35-turbo",
-        "--3",
-        "-3",
-        action="store_const",
-        dest="model",
-        const=gpt_3_model_name,
-        help=f"Use {gpt_3_model_name} model for the main chat",
-    )
-    deepseek_model = "deepseek/deepseek-chat"
-    group.add_argument(
-        "--deepseek",
-        action="store_const",
-        dest="model",
-        const=deepseek_model,
-        help=f"Use {deepseek_model} model for the main chat",
-    )
-    o1_mini_model = "o1-mini"
-    group.add_argument(
-        "--o1-mini",
-        action="store_const",
-        dest="model",
-        const=o1_mini_model,
-        help=f"Use {o1_mini_model} model for the main chat",
-    )
-    o1_preview_model = "o1-preview"
-    group.add_argument(
-        "--o1-preview",
-        action="store_const",
-        dest="model",
-        const=o1_preview_model,
-        help=f"Use {o1_preview_model} model for the main chat",
     )
 
     ##########
@@ -190,18 +122,28 @@ def get_parser(default_config_files, git_root):
         metavar="MODEL_SETTINGS_FILE",
         default=".aider.model.settings.yml",
         help="Specify a file with aider model settings for unknown models",
-    )
+    ).complete = shtab.FILE
     group.add_argument(
         "--model-metadata-file",
         metavar="MODEL_METADATA_FILE",
         default=".aider.model.metadata.json",
         help="Specify a file with context window and costs for unknown models",
-    )
+    ).complete = shtab.FILE
     group.add_argument(
         "--alias",
         action="append",
         metavar="ALIAS:MODEL",
         help="Add a model alias (can be used multiple times)",
+    )
+    group.add_argument(
+        "--reasoning-effort",
+        type=str,
+        help="Set the reasoning_effort API parameter (default: not set)",
+    )
+    group.add_argument(
+        "--thinking-tokens",
+        type=str,
+        help="Set the thinking token budget for models that support it (default: not set)",
     )
     group.add_argument(
         "--verify-ssl",
@@ -211,7 +153,7 @@ def get_parser(default_config_files, git_root):
     )
     group.add_argument(
         "--timeout",
-        type=int,
+        type=float,
         default=None,
         help="Timeout in seconds for API calls (default: None)",
     )
@@ -219,6 +161,7 @@ def get_parser(default_config_files, git_root):
         "--edit-format",
         "--chat-mode",
         metavar="EDIT_FORMAT",
+        choices=edit_format_choices,
         default=None,
         help="Specify what edit format the LLM should use (default depends on model)",
     )
@@ -228,6 +171,12 @@ def get_parser(default_config_files, git_root):
         dest="edit_format",
         const="architect",
         help="Use architect edit format for the main chat",
+    )
+    group.add_argument(
+        "--auto-accept-architect",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable/disable automatic acceptance of architect changes (default: True)",
     )
     group.add_argument(
         "--weak-model",
@@ -247,6 +196,7 @@ def get_parser(default_config_files, git_root):
     group.add_argument(
         "--editor-edit-format",
         metavar="EDITOR_EDIT_FORMAT",
+        choices=edit_format_choices,
         default=None,
         help="Specify the edit format for the editor model (default: depends on editor model)",
     )
@@ -255,6 +205,14 @@ def get_parser(default_config_files, git_root):
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Only work with models that have meta-data available (default: True)",
+    )
+    group.add_argument(
+        "--check-model-accepts-settings",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Check if model accepts settings like reasoning_effort/thinking_tokens (default: True)"
+        ),
     )
     group.add_argument(
         "--max-chat-history-tokens",
@@ -318,13 +276,13 @@ def get_parser(default_config_files, git_root):
         metavar="INPUT_HISTORY_FILE",
         default=default_input_history_file,
         help=f"Specify the chat input history file (default: {default_input_history_file})",
-    )
+    ).complete = shtab.FILE
     group.add_argument(
         "--chat-history-file",
         metavar="CHAT_HISTORY_FILE",
         default=default_chat_history_file,
         help=f"Specify the chat history file (default: {default_chat_history_file})",
-    )
+    ).complete = shtab.FILE
     group.add_argument(
         "--restore-chat-history",
         action=argparse.BooleanOptionalAction,
@@ -336,7 +294,7 @@ def get_parser(default_config_files, git_root):
         metavar="LLM_HISTORY_FILE",
         default=None,
         help="Log the conversation with the LLM to this file (for example, .aider.llm.history)",
-    )
+    ).complete = shtab.FILE
 
     ##########
     group = parser.add_argument_group("Output settings")
@@ -455,12 +413,14 @@ def get_parser(default_config_files, git_root):
     default_aiderignore_file = (
         os.path.join(git_root, ".aiderignore") if git_root else ".aiderignore"
     )
+
     group.add_argument(
         "--aiderignore",
         metavar="AIDERIGNORE",
+        type=lambda path_str: resolve_aiderignore_path(path_str, git_root),
         default=default_aiderignore_file,
         help="Specify the aider ignore file (default: .aiderignore in git root)",
-    )
+    ).complete = shtab.FILE
     group.add_argument(
         "--subtree-only",
         action="store_true",
@@ -482,14 +442,20 @@ def get_parser(default_config_files, git_root):
     group.add_argument(
         "--attribute-author",
         action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Attribute aider code changes in the git author name (default: True)",
+        default=None,
+        help=(
+            "Attribute aider code changes in the git author name (default: True). If explicitly set"
+            " to True, overrides --attribute-co-authored-by precedence."
+        ),
     )
     group.add_argument(
         "--attribute-committer",
         action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Attribute aider commits in the git committer name (default: True)",
+        default=None,
+        help=(
+            "Attribute aider commits in the git committer name (default: True). If explicitly set"
+            " to True, overrides --attribute-co-authored-by precedence for aider edits."
+        ),
     )
     group.add_argument(
         "--attribute-commit-message-author",
@@ -502,6 +468,22 @@ def get_parser(default_config_files, git_root):
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Prefix all commit messages with 'aider: ' (default: False)",
+    )
+    group.add_argument(
+        "--attribute-co-authored-by",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Attribute aider edits using the Co-authored-by trailer in the commit message"
+            " (default: False). If True, this takes precedence over default --attribute-author and"
+            " --attribute-committer behavior unless they are explicitly set to True."
+        ),
+    )
+    group.add_argument(
+        "--git-commit-verify",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Enable/disable git pre-commit hooks with --no-verify (default: False)",
     )
     group.add_argument(
         "--commit",
@@ -584,7 +566,7 @@ def get_parser(default_config_files, git_root):
         "--analytics-log",
         metavar="ANALYTICS_LOG_FILE",
         help="Specify a file to log analytics events",
-    )
+    ).complete = shtab.FILE
     group.add_argument(
         "--analytics-disable",
         action="store_true",
@@ -651,7 +633,7 @@ def get_parser(default_config_files, git_root):
             "Specify a file containing the message to send the LLM, process reply, then exit"
             " (disables chat mode)"
         ),
-    )
+    ).complete = shtab.FILE
     group.add_argument(
         "--gui",
         "--browser",
@@ -669,7 +651,7 @@ def get_parser(default_config_files, git_root):
         "--apply",
         metavar="FILE",
         help="Apply the changes from the given file instead of running the chat (debug)",
-    )
+    ).complete = shtab.FILE
     group.add_argument(
         "--apply-clipboard-edits",
         action="store_true",
@@ -720,23 +702,29 @@ def get_parser(default_config_files, git_root):
     ######
     group = parser.add_argument_group("Other settings")
     group.add_argument(
-        '--runner',
-        metavar='RUNNER_CMD',
+        "--runner",
+        metavar="RUNNER_CMD",
         default=None,
-        help='Specify a wrapper command to execute shell commands through (eg. docker exec)'
+        help="Specify a wrapper command to execute shell commands through (eg. docker exec)",
+    )
+    group.add_argument(
+        "--disable-playwright",
+        action="store_true",
+        help="Never prompt for or attempt to install Playwright for web scraping (default: False).",
+        default=False,
     )
     group.add_argument(
         "--file",
         action="append",
         metavar="FILE",
         help="specify a file to edit (can be used multiple times)",
-    )
+    ).complete = shtab.FILE
     group.add_argument(
         "--read",
         action="append",
         metavar="FILE",
         help="specify a read-only file (can be used multiple times)",
-    )
+    ).complete = shtab.FILE
     group.add_argument(
         "--vim",
         action="store_true",
@@ -766,7 +754,7 @@ def get_parser(default_config_files, git_root):
         "--load",
         metavar="LOAD_FILE",
         help="Load and execute /commands from a file on launch",
-    )
+    ).complete = shtab.FILE
     group.add_argument(
         "--encoding",
         default="utf-8",
@@ -787,7 +775,7 @@ def get_parser(default_config_files, git_root):
             "Specify the config file (default: search for .aider.conf.yml in git root, cwd"
             " or home directory)"
         ),
-    )
+    ).complete = shtab.FILE
     # This is a duplicate of the argument in the preparser and is a no-op by this time of
     # argument parsing, but it's here so that the help is displayed as expected.
     group.add_argument(
@@ -795,7 +783,7 @@ def get_parser(default_config_files, git_root):
         metavar="ENV_FILE",
         default=default_env_file(git_root),
         help="Specify the .env file to load (default: .env in git root)",
-    )
+    ).complete = shtab.FILE
     group.add_argument(
         "--suggest-shell-commands",
         action=argparse.BooleanOptionalAction,
@@ -815,6 +803,24 @@ def get_parser(default_config_files, git_root):
         help="Enable/disable multi-line input mode with Meta-Enter to submit (default: False)",
     )
     group.add_argument(
+        "--notifications",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Enable/disable terminal bell notifications when LLM responses are ready (default:"
+            " False)"
+        ),
+    )
+    group.add_argument(
+        "--notifications-command",
+        metavar="COMMAND",
+        default=None,
+        help=(
+            "Specify a command to run for notifications instead of the terminal bell. If not"
+            " specified, a default command for your OS may be used."
+        ),
+    )
+    group.add_argument(
         "--detect-urls",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -824,6 +830,22 @@ def get_parser(default_config_files, git_root):
         "--editor",
         help="Specify which editor to use for the /editor command",
     )
+
+    supported_shells_list = sorted(list(shtab.SUPPORTED_SHELLS))
+    group.add_argument(
+        "--shell-completions",
+        metavar="SHELL",
+        choices=supported_shells_list,
+        help=(
+            "Print shell completion script for the specified SHELL and exit. Supported shells:"
+            f" {', '.join(supported_shells_list)}. Example: aider --shell-completions bash"
+        ),
+    )
+
+    ##########
+    group = parser.add_argument_group("Deprecated model settings")
+    # Add deprecated model shortcut arguments
+    add_deprecated_model_args(parser, group)
 
     return parser
 
@@ -868,13 +890,34 @@ def get_sample_dotenv():
 
 
 def main():
-    arg = sys.argv[1] if len(sys.argv[1:]) else None
-
-    if arg == "md":
-        print(get_md_help())
-    elif arg == "dotenv":
-        print(get_sample_dotenv())
+    if len(sys.argv) > 1:
+        command = sys.argv[1]
     else:
+        command = "yaml"  # Default to yaml if no command is given
+
+    if command == "md":
+        print(get_md_help())
+    elif command == "dotenv":
+        print(get_sample_dotenv())
+    elif command == "yaml":
+        print(get_sample_yaml())
+    elif command == "completion":
+        if len(sys.argv) > 2:
+            shell = sys.argv[2]
+            if shell not in shtab.SUPPORTED_SHELLS:
+                print(f"Error: Unsupported shell '{shell}'.", file=sys.stderr)
+                print(f"Supported shells are: {', '.join(shtab.SUPPORTED_SHELLS)}", file=sys.stderr)
+                sys.exit(1)
+            parser = get_parser([], None)
+            parser.prog = "aider"  # Set the program name on the parser
+            print(shtab.complete(parser, shell=shell))
+        else:
+            print("Error: Please specify a shell for completion.", file=sys.stderr)
+            print(f"Usage: python {sys.argv[0]} completion <shell_name>", file=sys.stderr)
+            print(f"Supported shells are: {', '.join(shtab.SUPPORTED_SHELLS)}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        # Default to YAML for any other unrecognized argument, or if 'yaml' was explicitly passed
         print(get_sample_yaml())
 
 

@@ -7,11 +7,12 @@ description: Release notes and stats on aider writing its own code.
 
 # Release history
 
-{% include blame.md %}
-
-The above 
-[stats are based on the git commit history](/docs/faq.html#how-are-the-aider-wrote-xx-of-code-stats-computed)
+Aider writes most of its own code, usually about 70-80% of the new code in each release.
+These
+[statistics are based on the git commit history](/docs/faq.html#how-are-the-aider-wrote-xx-of-code-stats-computed)
 of the aider repo.
+
+{% include blame.md %}
 
 ## Release notes
 
@@ -23,13 +24,352 @@ cog.out(text)
 ]]]-->
 
 
+### Aider v0.83.1
+
+- Improved user language detection by correctly normalizing hyphenated language codes (e.g., `en-US` to `en`) and enhancing the validation of locale results.
+- Prevented Aider from instructing the LLM to reply in 'C' or 'POSIX' when these are detected as the system locale.
+- Displayed a spinner with the model name when generating commit messages.
+- Aider wrote 74% of the code in this release.
+
+### Aider v0.83.0
+
+- Added support for `gemini-2.5-pro-preview-05-06` models.
+- Added support for `qwen3-235b` models.
+- Added repo-map support for OCaml and OCaml interface files, by Andrey Popp.
+- Added a spinner animation while waiting for the LLM to start streaming its response.
+- Updated the spinner animation to a Knight Rider style.
+- Introduced `--attribute-co-authored-by` option to add co-author trailer to commit messages, by Andrew Grigorev.
+- Updated Gemini model aliases (e.g., `gemini`, `gemini-2.5-pro`) to point to the `05-06` preview versions.
+- Marked Gemini 2.5 Pro preview models as `overeager` by default.
+- Commit message prompt specifies the user's language.
+- Updated the default weak model for Gemini 2.5 Pro models to `gemini/gemini-2.5-flash-preview-04-17`.
+- Corrected `gemini-2.5-pro-exp-03-25` model settings to reflect its lack of support for `thinking_budget`.
+- Ensured model-specific system prompt prefixes are placed on a new line before the main system prompt.
+- Added tracking of total tokens sent and received, now included in benchmark statistics.
+- Automatically fetch model parameters (context window, pricing) for OpenRouter models directly from their website, by Stefan Hladnik.
+- Enabled support for `thinking_tokens` and `reasoning_effort` parameters for OpenRouter models.
+- Improved cost calculation using `litellm.completion_cost` where available.
+- Added model settings for `openrouter/google/gemini-2.5-pro-preview-03-25`.
+- Added `--disable-playwright` flag to prevent Playwright installation prompts and usage, by Andrew Grigorev.
+- The `aider scrape` command-line tool will now use Playwright for web scraping if it is available, by Jon Keys.
+- Fixed linter command execution on Windows by adopting `oslex` for argument quoting, by Titusz Pan.
+- Improved cross-platform display of shell commands by using `oslex` for robust argument quoting, by Titusz Pan.
+- Improved `/ask` mode to instruct the LLM to elide unchanging code in its responses.
+- Ensured web scraping in the GUI also respects Playwright availability and the `--disable-playwright` flag.
+- Improved display of filenames in the prompt header using rich Text formatting.
+- Enabled `reasoning_effort` for Gemini 2.5 Flash models.
+- Added a `--shell-completions` argument to generate shell completion scripts (e.g., for bash, zsh).
+- Explicit `--attribute-author` or `--attribute-committer` flags now override the default behavior when `--attribute-co-authored-by` is used, allowing finer control over commit attribution, by Andrew Grigorev.
+- Fixed an issue where read-only status of files might not be preserved correctly by some commands (e.g. `/drop` after adding a read-only file).
+- The `aider-args` utility (or `python -m aider.args`) now defaults to printing a sample YAML configuration if no arguments are provided.
+- Displayed token count progress and the name of the file or identifier being processed during repo map updates.
+- Extended the waiting spinner to also show for non-streaming responses and further enhanced its animation with console width clipping, cursor hiding, and a more continuous appearance.
+- Dropped support for Python 3.9.
+- Aider wrote 55% of the code in this release.
+
+### Aider v0.82.3
+
+- Add support for `gemini-2.5-flash-preview-04-17` models.
+- Improved robustness of edit block parsing when filenames start with backticks or fences.
+- Add new `udiff-simple` edit format, for Gemini 2.5 Pro.
+- Update default weak/editor models for Gemini 2.5 Pro models to use `gemini-2.5-flash-preview-04-17`.
+- Instruct models to reply in the user's detected system language.
+- Fix parsing of diffs for newly created files (`--- /dev/null`).
+- Add markdown syntax highlighting support when editing multi-line commit messages via `/commit`, by Kay Gosho.
+- Set Gemini 2.5 Pro models to use the `overeager` prompt setting by default.
+- Add common file types (`.svg`, `.pdf`) to the default list of ignored files for AI comment scanning (`--watch`).
+- Skip scanning files larger than 1MB for AI comments (`--watch`).
+
+### Aider v0.82.2
+
+- Fix editing shell files with diff-fenced, by zjy1412.
+- Improve robustness of patch application by allowing multiple update/delete actions for the same file within a single response.
+- Update prompts to instruct LLMs to consolidate all edits for a given file into a single block within the patch.
+
+### Aider v0.82.1
+
+- Added support for `o3` and `o4-mini` including provider-specific versions for OpenAI, OpenRouter, and Azure.
+- Added support for Azure specific `gpt-4.1` and `gpt-4.1-mini` models.
+- Disabled streaming for `o3` models since you need identity verification to stream.
+- Fixed handling of file paths in unified diffs, especially those generated by git.
+
+### Aider v0.82.0
+
+- Support for GPT 4.1, mini and nano.
+- Added new `patch` edit format for OpenAI's GPT-4.1 model.
+- Improved support for using architect mode with Gemini 2.5 Pro.
+- Added new `editor-diff`, `editor-whole`, and `editor-diff-fenced` edit formats.
+- Bugfix for automatically selecting the best edit format to use in architect mode.
+- Added support for `grok-3-fast-beta` and `grok-3-mini-fast-beta` models.
+- Aider wrote 92% of the code in this release.
+
+### Aider v0.81.3
+
+- Commit messages generated by aider are no longer forced to be entirely lowercase, by Peter Hadlaw.
+- Updated default settings for Grok models.
+
+### Aider v0.81.2
+
+- Add support for `xai/grok-3-beta`, `xai/grok-3-mini-beta`, `openrouter/x-ai/grok-3-beta`, `openrouter/x-ai/grok-3-mini-beta`, and `openrouter/openrouter/optimus-alpha` models.
+- Add alias "grok3" for `xai/grok-3-beta`.
+- Add alias "optimus" for `openrouter/openrouter/optimus-alpha`.
+- Fix URL extraction from error messages.
+- Allow adding files by full path even if a file with the same basename is already in the chat.
+- Fix quoting of values containing '#' in the sample `aider.conf.yml`.
+- Add support for Fireworks AI model 'deepseek-v3-0324', by Felix Lisczyk.
+- Commit messages generated by aider are now lowercase, by Anton Ödman.
+
+### Aider v0.81.1
+
+- Added support for the `gemini/gemini-2.5-pro-preview-03-25` model.
+- Updated the `gemini` alias to point to `gemini/gemini-2.5-pro-preview-03-25`.
+- Added the `gemini-exp` alias for `gemini/gemini-2.5-pro-exp-03-25`.
+
+### Aider v0.81.0
+
+- Added support for the `openrouter/openrouter/quasar-alpha` model.
+  - Run with `aider --model quasar`
+- Offer OpenRouter OAuth authentication if an OpenRouter model is specified but the API key is missing.
+- Prevent retrying API calls when the provider reports insufficient credits.
+- Improve URL detection to exclude trailing double quotes.
+- Aider wrote 86% of the code in this release.
+
+### Aider v0.80.4
+
+- Bumped deps to pickup litellm change to properly display the root cause of OpenRouter "choices" errors.
+
+### Aider v0.80.3
+
+- Improve error message for OpenRouter API connection issues to mention potential rate limiting or upstream provider issues.
+- Configure weak models (`gemini/gemini-2.0-flash` and `openrouter/google/gemini-2.0-flash-exp:free`) for Gemini 2.5 Pro models.
+- Add model metadata for `openrouter/google/gemini-2.0-flash-exp:free`.
+
+### Aider v0.80.2
+
+- Bumped deps.
+
+### Aider v0.80.1
+
+- Updated deps for yanked fsspec and aiohttp packages #3699
+- Removed redundant dependency check during OpenRouter OAuth flow, by Claudia Pellegrino.
+
+### Aider v0.80.0
+
+- OpenRouter OAuth integration:
+  - Offer to OAuth against OpenRouter if no model and keys are provided.
+  - Select OpenRouter default model based on free/paid tier status if `OPENROUTER_API_KEY` is set and no model is specified.
+- Prioritize `gemini/gemini-2.5-pro-exp-03-25` if `GEMINI_API_KEY` is set, and `vertex_ai/gemini-2.5-pro-exp-03-25` if `VERTEXAI_PROJECT` is set, when no model is specified.
+- Validate user-configured color settings on startup and warn/disable invalid ones.
+- Warn at startup if `--stream` and `--cache-prompts` are used together, as cost estimates may be inaccurate.
+- Boost repomap ranking for files whose path components match identifiers mentioned in the chat.
+- Change web scraping timeout from an error to a warning, allowing scraping to continue with potentially incomplete content.
+- Left-align markdown headings in the terminal output, by Peter Schilling.
+- Update edit format to the new model's default when switching models with `/model`, if the user was using the old model's default format.
+- Add `Ctrl-X Ctrl-E` keybinding to edit the current input buffer in an external editor, by Matteo Landi.
+- Fix linting errors for filepaths containing shell metacharacters, by Mir Adnan ALI.
+- Add the `openrouter/deepseek-chat-v3-0324:free` model.
+- Add repomap support for the Scala language, by Vasil Markoukin.
+- Fixed bug in `/run` that was preventing auto-testing.
+- Fix bug preventing `UnboundLocalError` during git tree traversal.
+- Handle `GitCommandNotFound` error if git is not installed or not in PATH.
+- Handle `FileNotFoundError` if the current working directory is deleted while aider is running.
+- Fix completion menu current item color styling, by Andrey Ivanov.
+- Aider wrote 87% of the code in this release.
+
+### Aider v0.79.2
+
+- Added 'gemini' alias for gemini-2.5-pro model.
+- Updated Gemini 2.5 Pro max output tokens to 64k.
+- Added support for Lisp-style semicolon comments in file watcher, by Matteo Landi.
+- Added OpenRouter API error detection and retries.
+- Added openrouter/deepseek-chat-v3-0324 model.
+- Aider wrote 93% of the code in this release.
+
+### Aider v0.79.1
+
+- Improved model listing to include all models in fuzzy matching, including those provided by aider (not litellm).
+
+### Aider v0.79.0
+
+- Added support for Gemini 2.5 Pro models.
+- Added support for DeepSeek V3 0324 model.
+- Added a new `/context` command that automatically identifies which files need to be edited for a given request.
+- Added `/edit` as an alias for the `/editor` command.
+- Added "overeager" mode for Claude 3.7 Sonnet models to try and keep it working within the requested scope.
+- Aider wrote 65% of the code in this release.
+
+### Aider v0.78.0
+
+- Added support for thinking tokens for OpenRouter Sonnet 3.7.
+- Added commands to switch between model types: `/editor-model` for Editor Model, and `/weak-model` for Weak Model, by csala.
+- Added model setting validation to ignore `--reasoning-effort` and `--thinking-tokens` if the model doesn't support them.
+- Added `--check-model-accepts-settings` flag (default: true) to force unsupported model settings.
+- Annotated which models support reasoning_effort and thinking_tokens settings in the model settings data.
+- Improved code block rendering in markdown output with better padding using NoInsetMarkdown.
+- Added `--git-commit-verify` flag (default: False) to control whether git commit hooks are bypassed.
+- Fixed autocompletion for `/ask`, `/code`, and `/architect` commands, by shladnik.
+- Added vi-like behavior when pressing enter in multiline-mode while in vi normal/navigation-mode, by Marco Mayer.
+- Added AWS_PROFILE support for Bedrock models, allowing use of AWS profiles instead of explicit credentials, by lentil32.
+- Enhanced `--aiderignore` argument to resolve both absolute and relative paths, by mopemope.
+- Improved platform information handling to gracefully handle retrieval errors.
+- Aider wrote 92% of the code in this release.
+
+### Aider v0.77.1
+
+- Bumped dependencies to pickup litellm fix for Ollama.
+- Added support for `openrouter/google/gemma-3-27b-it` model.
+- Updated exclude patterns for help documentation.
+
+### Aider v0.77.0
+
+- Big upgrade in [programming languages supported](https://aider.chat/docs/languages.html) by adopting [tree-sitter-language-pack](https://github.com/Goldziher/tree-sitter-language-pack/).
+  - 130 new languages with linter support.
+  - 20 new languages with repo-map support.
+- Added `/think-tokens` command to set thinking token budget with support for human-readable formats (8k, 10.5k, 0.5M).
+- Added `/reasoning-effort` command to control model reasoning level.
+- The `/think-tokens` and `/reasoning-effort` commands display current settings when called without arguments.
+- Display of thinking token budget and reasoning effort in model information.
+- Changed `--thinking-tokens` argument to accept string values with human-readable formats.
+- Added `--auto-accept-architect` flag (default: true) to automatically accept changes from architect coder format without confirmation.
+- Added support for `cohere_chat/command-a-03-2025` and `gemini/gemma-3-27b-it`
+- The bare `/drop` command now preserves original read-only files provided via args.read.
+- Fixed a bug where default model would be set by deprecated `--shortcut` switches even when already specified in the command line.
+- Improved AutoCompleter to require 3 characters for autocompletion to reduce noise.
+- Aider wrote 72% of the code in this release.
+
+### Aider v0.76.2
+
+- Fixed handling of JSONDecodeError when loading model cache file.
+- Fixed handling of GitCommandError when retrieving git user configuration.
+- Aider wrote 75% of the code in this release.
+
+### Aider v0.76.1
+
+- Added ignore_permission_denied option to file watcher to prevent errors when accessing restricted files, by Yutaka Matsubara.
+- Aider wrote 0% of the code in this release.
+
+### Aider v0.76.0
+
+- Improved support for thinking/reasoningmodels:
+  - Added `--thinking-tokens` CLI option to control token budget for models that support thinking.
+  - Display thinking/reasoning content from LLMs which return it.
+  - Enhanced handling of reasoning tags to better clean up model responses.
+  - Added deprecation warning for `remove_reasoning` setting, now replaced by `reasoning_tag`.
+- Aider will notify you when it's completed the last request and needs your input:
+  - Added [notifications when LLM responses are ready](https://aider.chat/docs/usage/notifications.html) with `--notifications` flag.
+  - Specify desktop notification command with `--notifications-command`.
+- Added support for QWQ 32B.
+- Switch to `tree-sitter-language-pack` for tree sitter support.
+- Improved error handling for EOF (Ctrl+D) in user input prompts.
+- Added helper function to ensure hex color values have a # prefix.
+- Fixed handling of Git errors when reading staged files.
+- Improved SSL verification control for model information requests.
+- Improved empty LLM response handling with clearer warning messages.
+- Fixed Git identity retrieval to respect global configuration, by Akira Komamura.
+- Offer to install dependencies for Bedrock and Vertex AI models.
+- Deprecated model shortcut args (like --4o, --opus) in favor of the --model flag.
+- Aider wrote 85% of the code in this release.
+
+### Aider v0.75.3
+
+- Support for V3 free on OpenRouter: `--model openrouter/deepseek/deepseek-chat:free`.
+
+### Aider v0.75.2
+
+- Added support for Claude 3.7 Sonnet models on OpenRouter, Bedrock and Vertex AI.
+- Updated default model to Claude 3.7 Sonnet on OpenRouter.
+- Added support for GPT-4.5-preview model.
+- Added support for Claude 3.7 Sonnet:beta on OpenRouter.
+- Fixed weak_model_name patterns to match main model name patterns for some models.
+
+### Aider v0.75.1
+
+- Added support for `openrouter/anthropic/claude-3.7-sonnet`
+
+### Aider v0.75.0
+
+- Basic support for Claude 3.7 Sonnet
+  - Use `--model sonnet` to use the new 3.7
+  - Thinking support coming soon.
+- Bugfix to `/editor` command.
+- Aider wrote 46% of the code in this release.
+
+### Aider v0.74.3
+
+- Downgrade streamlit dependency to avoid threading bug.
+- Added support for tree-sitter language pack.
+- Added openrouter/o3-mini-high model configuration.
+- Added build.gradle.kts to special files for Kotlin project support, by Lucas Shadler.
+
+### Aider v0.74.2
+
+- Prevent more than one cache warming thread from becoming active.
+- Fixed continuation prompt ". " for multiline input.
+- Added HCL (Terraform) syntax support, by Warren Krewenki.
+
+### Aider v0.74.1
+
+- Have o1 & o3-mini generate markdown by sending the magic "Formatting re-enabled." string.
+- Bugfix for multi-line inputs, which should not include the ". " continuation prompt.
+
+### Aider v0.74.0
+
+- Dynamically changes the Ollama context window to hold the current chat.
+- Better support for o3-mini, DeepSeek V3 & R1, o1-mini, o1 especially via third-party API providers.
+- Remove `<think>` tags from R1 responses for commit messages (and other weak model uses).
+- Can now specify `use_temperature: <float>` in model settings, not just true/false.
+- The full docker container now includes `boto3` for Bedrock.
+- Docker containers now set `HOME=/app` which is the normal project mount-point, to persist `~/.aider`.
+- Bugfix to prevent creating incorrect filenames like `python`, `php`, etc.
+- Bugfix for `--timeout`
+- Bugfix so that `/model` now correctly reports that the weak model is not changed.
+- Bugfix so that multi-line mode persists through ^C at confirmation prompts.
+- Watch files now fully ignores top-level directories named in ignore files, to reduce the chance of hitting OS watch limits. Helpful to ignore giant subtrees like `node_modules`.
+- Fast startup with more providers and when model metadata provided in local files.
+- Improved .gitignore handling:
+  - Honor ignores already in effect regardless of how they've been configured.
+  - Check for .env only when the file exists.
+- Yes/No prompts now accept All/Skip as alias for Y/N even when not processing a group of confirmations.
+- Aider wrote 77% of the code in this release.
+
+### Aider v0.73.0
+
+- Full support for o3-mini: `aider --model o3-mini`
+- New `--reasoning-effort` argument: low, medium, high.
+- Improved handling of context window size limits, with better messaging and Ollama-specific guidance.
+- Added support for removing model-specific reasoning tags from responses with `remove_reasoning: tagname` model setting.
+- Auto-create parent directories when creating new files, by xqyz.
+- Support for R1 free on OpenRouter: `--model openrouter/deepseek/deepseek-r1:free`
+- Aider wrote 69% of the code in this release.
+
+### Aider v0.72.3
+
+- Enforce user/assistant turn order to avoid R1 errors, by miradnanali.
+- Case-insensitive model name matching while preserving original case.
+
+### Aider v0.72.2
+- Harden against user/assistant turn order problems which cause R1 errors.
+
+### Aider v0.72.1
+- Fix model metadata for `openrouter/deepseek/deepseek-r1`
+
+### Aider v0.72.0
+- Support for DeepSeek R1.
+  - Use shortcut: `--model r1`
+  - Also via OpenRouter: `--model openrouter/deepseek/deepseek-r1`
+- Added Kotlin syntax support to repo map, by Paul Walker.
+- Added `--line-endings` for file writing, by Titusz Pan.
+- Added examples_as_sys_msg=True for GPT-4o models, improves benchmark scores.
+- Bumped all dependencies, to pick up litellm support for o1 system messages.
+- Bugfix for turn taking when reflecting lint/test errors.
+- Aider wrote 52% of the code in this release.
+
 ### Aider v0.71.1
 
 - Fix permissions issue in Docker images.
-- Added read-only file announcements to chat.
+- Added read-only file announcements.
 - Bugfix: ASCII fallback for unicode errors.
 - Bugfix: integer indices for list slicing in repomap calculations.
-- Aider wrote 83% of the code in this release.
 
 ### Aider v0.71.0
 

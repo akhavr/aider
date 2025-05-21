@@ -16,6 +16,7 @@ from types import SimpleNamespace
 from typing import List, Optional
 
 import git
+import importlib_resources
 import lox
 import pandas as pd
 import prompts
@@ -202,6 +203,15 @@ def main(
     num_ctx: Optional[int] = typer.Option(
         None, "--num-ctx", help="Override model context window size"
     ),
+    read_model_settings: str = typer.Option(
+        None, "--read-model-settings", help="Load aider model settings from YAML file"
+    ),
+    reasoning_effort: Optional[str] = typer.Option(
+        None, "--reasoning-effort", help="Set reasoning effort for models that support it"
+    ),
+    thinking_tokens: Optional[int] = typer.Option(
+        None, "--thinking-tokens", help="Set thinking tokens for models that support it"
+    ),
     exercises_dir: str = typer.Option(
         EXERCISES_DIR_DEFAULT, "--exercises-dir", help="Directory with exercise files"
     ),
@@ -310,6 +320,22 @@ def main(
 
     test_dnames = sorted(str(d.relative_to(original_dname)) for d in exercise_dirs)
 
+    resource_metadata = importlib_resources.files("aider.resources").joinpath("model-metadata.json")
+    model_metadata_files_loaded = models.register_litellm_models([resource_metadata])
+    dump(model_metadata_files_loaded)
+
+    if read_model_settings:
+        try:
+            files_loaded = models.register_models([read_model_settings])
+            if verbose:
+                if files_loaded:
+                    print(f"Loaded model settings from: {files_loaded[0]}")
+                else:
+                    print(f"No model settings loaded from: {read_model_settings}")
+        except Exception as e:
+            print(f"Error loading model settings: {e}")
+            return 1
+
     if keywords:
         keywords = keywords.split(",")
         test_dnames = [dn for dn in test_dnames for keyword in keywords if keyword in dn]
@@ -322,6 +348,7 @@ def main(
     LONG_TIMEOUT = 24 * 60 * 60
     sendchat.RETRY_TIMEOUT = LONG_TIMEOUT
     base_coder.RETRY_TIMEOUT = LONG_TIMEOUT
+    models.RETRY_TIMEOUT = LONG_TIMEOUT
 
     if threads == 1:
         all_results = []
@@ -341,6 +368,8 @@ def main(
                 editor_edit_format,
                 num_ctx,
                 sleep,
+                reasoning_effort,
+                thinking_tokens,
             )
 
             all_results.append(results)
@@ -363,6 +392,10 @@ def main(
                 replay,
                 editor_model,
                 editor_edit_format,
+                num_ctx,
+                sleep,
+                reasoning_effort,
+                thinking_tokens,
             )
         all_results = run_test_threaded.gather(tqdm=True)
 
@@ -459,7 +492,11 @@ def summarize_results(dirname, stats_languages=None):
     res.syntax_errors = 0
     res.indentation_errors = 0
     res.lazy_comments = 0
+    res.prompt_tokens = 0
+    res.completion_tokens = 0
 
+    res.reasoning_effort = None
+    res.thinking_tokens = None
     variants = defaultdict(set)
 
     for results in all_results:
@@ -487,6 +524,12 @@ def summarize_results(dirname, stats_languages=None):
 
         res.syntax_errors += results.get("syntax_errors", 0)
         res.indentation_errors += results.get("indentation_errors", 0)
+
+        res.prompt_tokens += results.get("prompt_tokens", 0)
+        res.completion_tokens += results.get("completion_tokens", 0)
+
+        res.reasoning_effort = results.get("reasoning_effort")
+        res.thinking_tokens = results.get("thinking_tokens")
 
         for key in "model edit_format commit_hash editor_model editor_edit_format".split():
             val = results.get(key)
@@ -531,6 +574,11 @@ def summarize_results(dirname, stats_languages=None):
         setattr(res, key, val)
         console.print(f"  {key}: {val}", style=style)
 
+    if res.reasoning_effort is not None:
+        print(f"  reasoning_effort: {res.reasoning_effort}")
+    if res.thinking_tokens is not None:
+        print(f"  thinking_tokens: {res.thinking_tokens}")
+
     for i in range(tries):
         print(f"  pass_rate_{i + 1}: {percents[i]:.1f}")
     for i in range(tries):
@@ -547,6 +595,8 @@ def summarize_results(dirname, stats_languages=None):
     show("syntax_errors")
     show("indentation_errors")
     show("exhausted_context_windows")
+    show("prompt_tokens", red=None)
+    show("completion_tokens", red=None)
     show("test_timeouts")
     print(f"  total_tests: {res.total_tests}")
 
@@ -616,15 +666,14 @@ def get_replayed_content(replay_dname, test_dname):
 def run_test(original_dname, testdir, *args, **kwargs):
     try:
         return run_test_real(original_dname, testdir, *args, **kwargs)
-    except Exception as err:
+    except Exception:
         print("=" * 40)
         print("Test failed")
-        print(err)
         traceback.print_exc()
 
         testdir = Path(testdir)
         results_fname = testdir / ".aider.results.json"
-        results_fname.write_text(json.dumps(dict(exception=str(err))))
+        results_fname.write_text(json.dumps(dict(exception=traceback.format_exc())))
 
 
 def run_test_real(
@@ -642,6 +691,9 @@ def run_test_real(
     editor_edit_format,
     num_ctx=None,
     sleep=0,
+    reasoning_effort: Optional[str] = None,
+    thinking_tokens: Optional[int] = None,
+    read_model_settings=None,
 ):
     if not os.path.isdir(testdir):
         print("Not a dir:", testdir)
@@ -717,17 +769,6 @@ def run_test_real(
         else:
             print(f"Warning: Solution file not found: {src}")
 
-    # Copy all test files
-    for file_path in test_files:
-        src = testdir / Path(file_path)
-        if src.exists():
-            original_fname = original_dname / testdir.name / file_path
-            if original_fname.exists():
-                os.makedirs(src.parent, exist_ok=True)
-                shutil.copy(original_fname, src)
-        else:
-            print(f"Warning: Test file not found: {src}")
-
     file_list = " ".join(fname.name for fname in fnames)
 
     instructions = ""
@@ -743,7 +784,7 @@ def run_test_real(
     instructions += prompts.instructions_addendum.format(file_list=file_list)
 
     io = InputOutput(
-        pretty=True,
+        pretty=False,
         yes=True,
         chat_history_file=history_fname,
     )
@@ -756,7 +797,16 @@ def run_test_real(
         weak_model=weak_model_name,
         editor_model=editor_model,
         editor_edit_format=editor_edit_format,
+        verbose=verbose,
     )
+
+    if reasoning_effort is not None:
+        main_model.set_reasoning_effort(reasoning_effort)
+
+    if thinking_tokens is not None:
+        main_model.set_thinking_tokens(thinking_tokens)
+
+    dump(main_model.max_chat_history_tokens)
 
     if num_ctx:
         if not main_model.extra_params:
@@ -785,6 +835,7 @@ def run_test_real(
     dump(coder.ignore_mentions)
 
     coder.show_announcements()
+    coder.get_file_mentions = lambda x: set()  # No loading of any other files
 
     timeouts = 0
 
@@ -796,6 +847,7 @@ def run_test_real(
     test_outcomes = []
     for i in range(tries):
         start = time.time()
+
         if no_aider:
             pass
         elif replay:
@@ -904,6 +956,10 @@ def run_test_real(
         syntax_errors=syntax_errors,
         indentation_errors=indentation_errors,
         lazy_comments=lazy_comments,  # Add the count of pattern matches to the results
+        reasoning_effort=reasoning_effort,
+        prompt_tokens=coder.total_tokens_sent,
+        completion_tokens=coder.total_tokens_received,
+        thinking_tokens=thinking_tokens,
         chat_hashes=list(
             zip(
                 coder.chat_completion_call_hashes,
@@ -924,15 +980,6 @@ def run_test_real(
 
 def run_unit_tests(original_dname, testdir, history_fname, test_files):
     timeout = 60 * 3
-
-    # Remove @Disabled annotations from Java test files
-    for file_path in test_files:
-        if file_path.endswith(".java"):
-            test_file = testdir / file_path
-            if test_file.exists():
-                content = test_file.read_text()
-                content = re.sub(r"@Disabled\([^)]*\)\s*\n", "", content)
-                test_file.write_text(content)
 
     # Map of file extensions to test commands
     TEST_COMMANDS = {
@@ -959,11 +1006,21 @@ def run_unit_tests(original_dname, testdir, history_fname, test_files):
 
     # Copy test files from original directory
     for file_path in test_files:
-        src = original_dname / testdir.name / file_path
+        src = original_dname / Path(*testdir.parts[-4:]) / file_path
         dst = testdir / file_path
         if src.exists():
+            print("copying", src, dst)
             os.makedirs(dst.parent, exist_ok=True)
             shutil.copy(src, dst)
+
+    # Remove @Disabled annotations from Java test files
+    for file_path in test_files:
+        if file_path.endswith(".java"):
+            test_file = testdir / file_path
+            if test_file.exists():
+                content = test_file.read_text()
+                content = re.sub(r"@Disabled\([^)]*\)\s*\n", "", content)
+                test_file.write_text(content)
 
     print(" ".join(command))
 
@@ -974,6 +1031,8 @@ def run_unit_tests(original_dname, testdir, history_fname, test_files):
         text=True,
         timeout=timeout,
         cwd=testdir,
+        encoding="utf-8",
+        errors="replace",
     )
 
     success = result.returncode == 0

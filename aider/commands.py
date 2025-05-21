@@ -18,6 +18,7 @@ from aider import models, prompts, voice
 from aider.editor import pipe_editor
 from aider.format_settings import format_settings
 from aider.help import Help, install_help_extra
+from aider.io import CommandCompletionException
 from aider.llm import litellm
 from aider.repo import ANY_GIT_ERROR
 from aider.run_cmd import run_cmd
@@ -28,8 +29,9 @@ from .dump import dump  # noqa: F401
 
 
 class SwitchCoder(Exception):
-    def __init__(self, **kwargs):
+    def __init__(self, placeholder=None, **kwargs):
         self.kwargs = kwargs
+        self.placeholder = placeholder
 
 
 class Commands:
@@ -46,6 +48,7 @@ class Commands:
             parser=self.parser,
             verbose=self.verbose,
             editor=self.editor,
+            original_read_only_fnames=self.original_read_only_fnames,
         )
 
     def __init__(
@@ -61,6 +64,7 @@ class Commands:
         verbose=False,
         editor=None,
         runner=None,
+        original_read_only_fnames=None,
     ):
         self.io = io
         self.coder = coder
@@ -80,11 +84,52 @@ class Commands:
         self.editor = editor
         self.runner = runner
 
+        # Store the original read-only filenames provided via args.read
+        self.original_read_only_fnames = set(original_read_only_fnames or [])
+
     def cmd_model(self, args):
-        "Switch to a new LLM"
+        "Switch the Main Model to a new LLM"
 
         model_name = args.strip()
-        model = models.Model(model_name)
+        model = models.Model(
+            model_name,
+            editor_model=self.coder.main_model.editor_model.name,
+            weak_model=self.coder.main_model.weak_model.name,
+        )
+        models.sanity_check_models(self.io, model)
+
+        # Check if the current edit format is the default for the old model
+        old_model_edit_format = self.coder.main_model.edit_format
+        current_edit_format = self.coder.edit_format
+
+        new_edit_format = current_edit_format
+        if current_edit_format == old_model_edit_format:
+            # If the user was using the old model's default, switch to the new model's default
+            new_edit_format = model.edit_format
+
+        raise SwitchCoder(main_model=model, edit_format=new_edit_format)
+
+    def cmd_editor_model(self, args):
+        "Switch the Editor Model to a new LLM"
+
+        model_name = args.strip()
+        model = models.Model(
+            self.coder.main_model.name,
+            editor_model=model_name,
+            weak_model=self.coder.main_model.weak_model.name,
+        )
+        models.sanity_check_models(self.io, model)
+        raise SwitchCoder(main_model=model)
+
+    def cmd_weak_model(self, args):
+        "Switch the Weak Model to a new LLM"
+
+        model_name = args.strip()
+        model = models.Model(
+            self.coder.main_model.name,
+            editor_model=self.coder.main_model.editor_model.name,
+            weak_model=model_name,
+        )
         models.sanity_check_models(self.io, model)
         raise SwitchCoder(main_model=model)
 
@@ -116,6 +161,10 @@ class Commands:
                         "Work with an architect model to design code changes, and an editor to make"
                         " them."
                     ),
+                ),
+                (
+                    "context",
+                    "Automatically identify which files will need to be edited.",
                 ),
             ]
         )
@@ -175,12 +224,18 @@ class Commands:
 
         self.io.tool_output(f"Scraping {url}...")
         if not self.scraper:
-            res = install_playwright(self.io)
-            if not res:
-                self.io.tool_warning("Unable to initialize playwright.")
+            disable_playwright = getattr(self.args, "disable_playwright", False)
+            if disable_playwright:
+                res = False
+            else:
+                res = install_playwright(self.io)
+                if not res:
+                    self.io.tool_warning("Unable to initialize playwright.")
 
             self.scraper = Scraper(
-                print_error=self.io.tool_error, playwright_available=res, verify_ssl=self.verify_ssl
+                print_error=self.io.tool_error,
+                playwright_available=res,
+                verify_ssl=self.verify_ssl,
             )
 
         content = self.scraper.scrape(url) or ""
@@ -294,7 +349,7 @@ class Commands:
             return
 
         commit_message = args.strip() if args else None
-        self.coder.repo.commit(message=commit_message)
+        self.coder.repo.commit(message=commit_message, coder=self.coder)
 
     def cmd_lint(self, args="", fnames=None):
         "Lint and fix in-chat files or all dirty files if none in chat"
@@ -358,7 +413,21 @@ class Commands:
 
     def _drop_all_files(self):
         self.coder.abs_fnames = set()
-        self.coder.abs_read_only_fnames = set()
+
+        # When dropping all files, keep those that were originally provided via args.read
+        if self.original_read_only_fnames:
+            # Keep only the original read-only files
+            to_keep = set()
+            for abs_fname in self.coder.abs_read_only_fnames:
+                rel_fname = self.coder.get_rel_fname(abs_fname)
+                if (
+                    abs_fname in self.original_read_only_fnames
+                    or rel_fname in self.original_read_only_fnames
+                ):
+                    to_keep.add(abs_fname)
+            self.coder.abs_read_only_fnames = to_keep
+        else:
+            self.coder.abs_read_only_fnames = set()
 
     def _clear_chat_history(self):
         self.coder.done_messages = []
@@ -407,6 +476,7 @@ class Commands:
 
         fence = "`" * 3
 
+        file_res = []
         # files
         for fname in self.coder.abs_fnames:
             relative_fname = self.coder.get_rel_fname(fname)
@@ -417,7 +487,7 @@ class Commands:
                 # approximate
                 content = f"{relative_fname}\n{fence}\n" + content + "{fence}\n"
                 tokens = self.coder.main_model.token_count(content)
-            res.append((tokens, f"{relative_fname}", "/drop to remove"))
+            file_res.append((tokens, f"{relative_fname}", "/drop to remove"))
 
         # read-only files
         for fname in self.coder.abs_read_only_fnames:
@@ -427,7 +497,10 @@ class Commands:
                 # approximate
                 content = f"{relative_fname}\n{fence}\n" + content + "{fence}\n"
                 tokens = self.coder.main_model.token_count(content)
-                res.append((tokens, f"{relative_fname} (read-only)", "/drop to remove"))
+                file_res.append((tokens, f"{relative_fname} (read-only)", "/drop to remove"))
+
+        file_res.sort()
+        res.extend(file_res)
 
         self.io.tool_output(
             f"Approximate context window usage for {self.coder.main_model.name}, in tokens:"
@@ -759,6 +832,7 @@ class Commands:
 
             if self.io.confirm_ask(f"No files matched '{word}'. Do you want to create {fname}?"):
                 try:
+                    fname.parent.mkdir(parents=True, exist_ok=True)
                     fname.touch()
                     all_matched_files.add(str(fname))
                 except OSError as e:
@@ -820,7 +894,12 @@ class Commands:
         "Remove files from the chat session to free up context space"
 
         if not args.strip():
-            self.io.tool_output("Dropping all files from the chat session.")
+            if self.original_read_only_fnames:
+                self.io.tool_output(
+                    "Dropping all files from the chat session except originally read-only files."
+                )
+            else:
+                self.io.tool_output("Dropping all files from the chat session.")
             self._drop_all_files()
             return
 
@@ -915,7 +994,7 @@ class Commands:
     def cmd_run(self, args, add_on_nonzero_exit=False):
         "Run a shell command and optionally add the output to the chat (alias: !)"
         if self.runner:
-            args = f'{self.runner} {shlex.quote(command)}'
+            args = f"{self.runner} {shlex.quote(args)}"
 
         exit_status, combined_output = run_cmd(
             args, verbose=self.verbose, error_print=self.io.tool_error, cwd=self.coder.root
@@ -948,8 +1027,14 @@ class Commands:
                 dict(role="assistant", content="Ok."),
             ]
 
-            if add and exit_status != 0:
+            if add_on_nonzero_exit and exit_status != 0:
+                # Return the formatted output message for test failures
+                return msg
+            elif add and exit_status != 0:
                 self.io.placeholder = "What's wrong? Fix"
+
+        # Return None if output wasn't added or command succeeded
+        return None
 
     def cmd_exit(self, args):
         "Exit the application"
@@ -1066,6 +1151,18 @@ class Commands:
             show_announcements=False,
         )
 
+    def completions_ask(self):
+        raise CommandCompletionException()
+
+    def completions_code(self):
+        raise CommandCompletionException()
+
+    def completions_architect(self):
+        raise CommandCompletionException()
+
+    def completions_context(self):
+        raise CommandCompletionException()
+
     def cmd_ask(self, args):
         """Ask questions about the code base without editing any files. If no prompt provided, switches to ask mode."""  # noqa
         return self._generic_chat_command(args, "ask")
@@ -1078,7 +1175,11 @@ class Commands:
         """Enter architect/editor mode using 2 different models. If no prompt provided, switches to architect/editor mode."""  # noqa
         return self._generic_chat_command(args, "architect")
 
-    def _generic_chat_command(self, args, edit_format):
+    def cmd_context(self, args):
+        """Enter context mode to see surrounding code context. If no prompt provided, switches to context mode."""  # noqa
+        return self._generic_chat_command(args, "context", placeholder=args.strip() or None)
+
+    def _generic_chat_command(self, args, edit_format, placeholder=None):
         if not args.strip():
             # Switch to the corresponding chat mode if no args provided
             return self.cmd_chat_mode(edit_format)
@@ -1095,11 +1196,13 @@ class Commands:
         user_msg = args
         coder.run(user_msg)
 
+        # Use the provided placeholder if any
         raise SwitchCoder(
             edit_format=self.coder.edit_format,
             summarize_from_coder=False,
             from_coder=coder,
             show_announcements=False,
+            placeholder=placeholder,
         )
 
     def get_help_md(self):
@@ -1295,7 +1398,30 @@ class Commands:
         "Print out the current settings"
         settings = format_settings(self.parser, self.args)
         announcements = "\n".join(self.coder.get_announcements())
+
+        # Build metadata for the active models (main, editor, weak)
+        model_sections = []
+        active_models = [
+            ("Main model", self.coder.main_model),
+            ("Editor model", getattr(self.coder.main_model, "editor_model", None)),
+            ("Weak model", getattr(self.coder.main_model, "weak_model", None)),
+        ]
+        for label, model in active_models:
+            if not model:
+                continue
+            info = getattr(model, "info", {}) or {}
+            if not info:
+                continue
+            model_sections.append(f"{label} ({model.name}):")
+            for k, v in sorted(info.items()):
+                model_sections.append(f"  {k}: {v}")
+            model_sections.append("")  # blank line between models
+
+        model_metadata = "\n".join(model_sections)
+
         output = f"{announcements}\n{settings}"
+        if model_metadata:
+            output += "\n" + model_metadata
         self.io.tool_output(output)
 
     def completions_raw_load(self, document, complete_event):
@@ -1411,6 +1537,62 @@ class Commands:
         user_input = pipe_editor(initial_content, suffix="md", editor=self.editor)
         if user_input.strip():
             self.io.set_placeholder(user_input.rstrip())
+
+    def cmd_edit(self, args=""):
+        "Alias for /editor: Open an editor to write a prompt"
+        return self.cmd_editor(args)
+
+    def cmd_think_tokens(self, args):
+        "Set the thinking token budget (supports formats like 8096, 8k, 10.5k, 0.5M)"
+        model = self.coder.main_model
+
+        if not args.strip():
+            # Display current value if no args are provided
+            formatted_budget = model.get_thinking_tokens()
+            if formatted_budget is None:
+                self.io.tool_output("Thinking tokens are not currently set.")
+            else:
+                budget = model.get_raw_thinking_tokens()
+                self.io.tool_output(
+                    f"Current thinking token budget: {budget:,} tokens ({formatted_budget})."
+                )
+            return
+
+        value = args.strip()
+        model.set_thinking_tokens(value)
+
+        formatted_budget = model.get_thinking_tokens()
+        budget = model.get_raw_thinking_tokens()
+
+        self.io.tool_output(f"Set thinking token budget to {budget:,} tokens ({formatted_budget}).")
+        self.io.tool_output()
+
+        # Output announcements
+        announcements = "\n".join(self.coder.get_announcements())
+        self.io.tool_output(announcements)
+
+    def cmd_reasoning_effort(self, args):
+        "Set the reasoning effort level (values: number or low/medium/high depending on model)"
+        model = self.coder.main_model
+
+        if not args.strip():
+            # Display current value if no args are provided
+            reasoning_value = model.get_reasoning_effort()
+            if reasoning_value is None:
+                self.io.tool_output("Reasoning effort is not currently set.")
+            else:
+                self.io.tool_output(f"Current reasoning effort: {reasoning_value}")
+            return
+
+        value = args.strip()
+        model.set_reasoning_effort(value)
+        reasoning_value = model.get_reasoning_effort()
+        self.io.tool_output(f"Set reasoning effort to {reasoning_value}")
+        self.io.tool_output()
+
+        # Output announcements
+        announcements = "\n".join(self.coder.get_announcements())
+        self.io.tool_output(announcements)
 
     def cmd_copy_context(self, args=None):
         """Copy the current chat context as markdown, suitable to paste into a web UI"""
